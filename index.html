@@ -484,14 +484,18 @@
                 if (config.hasOwnProperty('textNotif')) document.getElementById('textToggle').checked = config.textNotif;
                 
                 // Jam Kerja
-                document.getElementById('sch_in_start_mon').value = config.mon_thu.in_start;
-                document.getElementById('sch_in_end_mon').value = config.mon_thu.in_end;
-                document.getElementById('sch_out_start_mon').value = config.mon_thu.out_start;
-                document.getElementById('sch_out_end_mon').value = config.mon_thu.out_end;
-                document.getElementById('sch_in_start_fri').value = config.fri.in_start;
-                document.getElementById('sch_in_end_fri').value = config.fri.in_end;
-                document.getElementById('sch_out_start_fri').value = config.fri.out_start;
-                document.getElementById('sch_out_end_fri').value = config.fri.out_end;
+                if(config.mon_thu) {
+                    document.getElementById('sch_in_start_mon').value = config.mon_thu.in_start;
+                    document.getElementById('sch_in_end_mon').value = config.mon_thu.in_end;
+                    document.getElementById('sch_out_start_mon').value = config.mon_thu.out_start;
+                    document.getElementById('sch_out_end_mon').value = config.mon_thu.out_end;
+                }
+                if(config.fri) {
+                    document.getElementById('sch_in_start_fri').value = config.fri.in_start;
+                    document.getElementById('sch_in_end_fri').value = config.fri.in_end;
+                    document.getElementById('sch_out_start_fri').value = config.fri.out_start;
+                    document.getElementById('sch_out_end_fri').value = config.fri.out_end;
+                }
 
                 updateNavVisibility(); 
                 renderUI();
@@ -548,6 +552,11 @@
                 const data = await res.json();
                 if(data.employees) { employees = data.employees; localStorage.setItem(STORAGE.EMP, JSON.stringify(employees)); }
                 if(data.logs) { logs = data.logs; localStorage.setItem(STORAGE.LOGS, JSON.stringify(logs)); }
+                // Memuat Config dari Server
+                if(data.config) {
+                    config = { ...config, ...data.config };
+                    localStorage.setItem(STORAGE.CONF, JSON.stringify(config));
+                }
                 buildMatcher(); renderUI(); renderRecap();
             } catch(e) {}
         }
@@ -661,10 +670,9 @@
         // Helper untuk cek apakah waktu saat ini berada dalam rentang jadwal
         function isTimeInSchedule(type) {
             const now = new Date();
-            const day = now.getDay(); // 0: Minggu, 5: Jumat, 6: Sabtu
+            const day = now.getDay(); 
             const timeStr = now.getHours().toString().padStart(2, '0') + ":" + now.getMinutes().toString().padStart(2, '0');
             
-            // Cek hari libur (Sabtu & Minggu)
             if (day === 0 || day === 6) return { ok: false, msg: "Hari Libur!" };
             
             const sched = (day === 5) ? config.fri : config.mon_thu;
@@ -685,7 +693,6 @@
             return { ok: true };
         }
 
-        // Helper untuk cek apakah petugas sudah absen hari ini
         function hasAlreadyScannedToday(name, type) {
             const today = new Date().toLocaleDateString('id-ID');
             return logs.some(l => {
@@ -698,13 +705,12 @@
             if(!isAiReady) return showToast("AI belum siap");
             if(!faceMatcher) return showToast("Daftarkan petugas dahulu");
             
-            // VALIDASI 1: Cek Batas Waktu Berdasarkan Jadwal
             if (type !== 'Dinas Luar') {
                 const timeCheck = isTimeInSchedule(type);
                 if (!timeCheck.ok) return showToast(timeCheck.msg);
             }
 
-            isProcessingScan = false; // Reset flag pemindaian
+            isProcessingScan = false; 
             
             if (config.gps && type !== 'Dinas Luar') {
                 showToast("Verifikasi Lokasi...");
@@ -737,7 +743,6 @@
                             const match = faceMatcher.findBestMatch(detect.descriptor);
                             
                             if (match.label !== 'unknown') {
-                                // VALIDASI 2: Cek apakah petugas sudah absen tipe ini hari ini
                                 if (hasAlreadyScannedToday(match.label, pendingType)) {
                                     isProcessingScan = true; 
                                     clearInterval(interval);
@@ -746,10 +751,9 @@
                                     return;
                                 }
 
-                                isProcessingScan = true; // Kunci proses
+                                isProcessingScan = true; 
                                 clearInterval(interval);
                                 
-                                // Umpan balik visual
                                 document.getElementById('mainCamContainer').classList.add('success');
                                 document.getElementById('scanStatus').innerText = "Wajah Terkunci!";
                                 if(config.textNotif) showToast("Wajah Terdeteksi: " + match.label);
@@ -776,7 +780,6 @@
             if(navigator.onLine) fetch(BACKEND_URL, { method: 'POST', mode: 'no-cors', body: JSON.stringify({ action: 'addLog', data: log }) });
             dlNoteVal = ""; renderUI(); renderRecap();
             
-            // CEK PENGATURAN NOTIFIKASI
             if(config.textNotif) showToast(`Absen ${type} Berhasil!`);
             if(config.voiceNotif) speak(`${name}, absen ${type} berhasil.`);
         }
@@ -820,24 +823,45 @@
             showToast("Petugas Berhasil Ditambah");
         }
 
+        // PERBAIKAN: Fungsi Simpan Config dengan Null-Safety & Sync ke Server
         function saveAllSettings() {
-            config.lat = document.getElementById('configLat').value;
-            config.lng = document.getElementById('configLng').value;
-            config.gps = document.getElementById('gpsToggle').checked;
-            config.voiceNotif = document.getElementById('voiceToggle').checked;
-            config.textNotif = document.getElementById('textToggle').checked;
-            config.pin = document.getElementById('newPin').value || config.pin;
-            
-            config.mon_thu.in_start = document.getElementById('sch_in_start_mon').value;
-            config.mon_thu.in_end = document.getElementById('sch_in_end_mon').value;
-            config.mon_thu.out_start = document.getElementById('sch_out_start_mon').value;
-            config.mon_thu.out_end = document.getElementById('sch_out_end_mon').value;
-            config.fri.in_start = document.getElementById('sch_in_start_fri').value;
-            config.fri.in_end = document.getElementById('sch_in_end_fri').value;
-            config.fri.out_start = document.getElementById('sch_out_start_fri').value;
-            config.fri.out_end = document.getElementById('sch_out_end_fri').value;
+            const getVal = (id) => document.getElementById(id)?.value || "";
+            const getChecked = (id) => document.getElementById(id)?.checked || false;
 
+            config.lat = getVal('configLat');
+            config.lng = getVal('configLng');
+            config.gps = getChecked('gpsToggle');
+            config.voiceNotif = getChecked('voiceToggle');
+            config.textNotif = getChecked('textToggle');
+            
+            const pVal = getVal('newPin');
+            if(pVal) config.pin = pVal;
+            
+            // Jam Kerja
+            if(!config.mon_thu) config.mon_thu = {};
+            config.mon_thu.in_start = getVal('sch_in_start_mon');
+            config.mon_thu.in_end = getVal('sch_in_end_mon');
+            config.mon_thu.out_start = getVal('sch_out_start_mon');
+            config.mon_thu.out_end = getVal('sch_out_end_mon');
+
+            if(!config.fri) config.fri = {};
+            config.fri.in_start = getVal('sch_in_start_fri');
+            config.fri.in_end = getVal('sch_in_end_fri');
+            config.fri.out_start = getVal('sch_out_start_fri');
+            config.fri.out_end = getVal('sch_out_end_fri');
+
+            // Simpan Lokal
             localStorage.setItem(STORAGE.CONF, JSON.stringify(config));
+            
+            // Simpan ke Server (Google Sheets)
+            if(navigator.onLine) {
+                fetch(BACKEND_URL, { 
+                    method: 'POST', 
+                    mode: 'no-cors', 
+                    body: JSON.stringify({ action: 'saveConfig', data: config }) 
+                });
+            }
+            
             showToast("Konfigurasi Tersimpan!");
         }
 
